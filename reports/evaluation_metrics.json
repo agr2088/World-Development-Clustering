@@ -1,0 +1,62 @@
+[
+  {
+    "model": "KMeans",
+    "n_clusters": 4,
+    "noise_points": 0,
+    "silhouette_score": 0.2237,
+    "davies_bouldin": 1.47,
+    "calinski_harabasz": 57.9326,
+    "bic": null,
+    "aic": null,
+    "min_cluster_size": 28,
+    "invalid": false
+  },
+  {
+    "model": "GMM (diag)",
+    "n_clusters": 4,
+    "noise_points": 0,
+    "silhouette_score": 0.1749,
+    "davies_bouldin": 1.6825,
+    "calinski_harabasz": 52.021,
+    "bic": 8040.94,
+    "aic": 7504.95,
+    "min_cluster_size": 40,
+    "invalid": false
+  },
+  {
+    "model": "Agglomerative",
+    "n_clusters": 4,
+    "noise_points": 0,
+    "silhouette_score": 0.2108,
+    "davies_bouldin": 1.2199,
+    "calinski_harabasz": 27.8821,
+    "bic": null,
+    "aic": null,
+    "min_cluster_size": 2,
+    "invalid": true
+  },
+  {
+    "model": "Spectral",
+    "n_clusters": 4,
+    "noise_points": 0,
+    "silhouette_score": 0.2164,
+    "davies_bouldin": 1.4965,
+    "calinski_harabasz": 55.2074,
+    "bic": null,
+    "aic": null,
+    "min_cluster_size": 23,
+    "invalid": false
+  },
+  {
+    "model": "BIRCH",
+    "n_clusters": 4,
+    "noise_points": 0,
+    "silhouette_score": 0.1983,
+    "davies_bouldin": 1.4429,
+    "calinski_harabasz": 48.6007,
+    "bic": null,
+    "aic": null,
+    "min_cluster_size": 19,
+    "invalid": false
+  }
+]
