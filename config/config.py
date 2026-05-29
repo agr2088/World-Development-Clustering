@@ -169,9 +169,12 @@ HIERARCHICAL_PARAMS = {
     "metric"     : "euclidean",
 }
 
+GMM_DEFAULT_COV_TYPE = "diag"  # fallback if BIC comparison is skipped
+
+# BIC-selected at last run; pipeline overrides this dynamically via compare_covariance_types()
 GMM_PARAMS = {
     "n_components"   : 4,
-    "covariance_type": "full",
+    "covariance_type": "diag",
     "n_init"         : 10,
     "max_iter"       : 200,
     "random_state"   : 42,

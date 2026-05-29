@@ -1,22 +1,24 @@
 """
 utils/loader.py
-Cached data loading — no redundant I/O on re-renders.
-
-BUGS FIXED:
-  - load_cluster_profiles: set_index check was fragile when first column
-    name doesn't contain "Cluster"; now uses positional check.
-  - load_metrics: JSON cluster_sizes keys are strings; kept as-is (callers cast).
-  - Added graceful fallback if Label_Agreement column values are > 1.0
-    (some pipelines store raw count instead of ratio).
+Cached data loading - no redundant I/O on re-renders.
 """
 
 import os
 import json
+import sys
+from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+_here = Path(__file__).resolve()
+PROJECT_ROOT = next(
+    p for p in [_here, *_here.parents]
+    if (p / "config").is_dir() and (p / "src").is_dir()
+)
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from config.config import CLUSTERED_DATA, REPORTS_DIR, PROCESSED_DIR
 
 
@@ -24,36 +26,39 @@ from config.config import CLUSTERED_DATA, REPORTS_DIR, PROCESSED_DIR
 def load_clustered_data() -> pd.DataFrame:
     df = pd.read_csv(CLUSTERED_DATA)
 
-    # ── Coerce cluster columns to int ───────────────────────────────
     cluster_cols = [c for c in df.columns if c.endswith("_Cluster")]
     for col in cluster_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
-    # ── Ensure Label_Agreement is a 0-1 float ───────────────────────
-    if "Label_Agreement" not in df.columns:
-        label_cols = [c for c in df.columns if c.endswith("_Label")]
+    label_cols = [c for c in df.columns if c.endswith("_Label") and c != "Majority_Label"]
+
+    def _recompute_label_consensus() -> None:
         if label_cols:
-            df["Label_Agreement"] = df[label_cols].apply(
-                lambda row: row.value_counts().iloc[0] / len(row), axis=1
+            modes = df[label_cols].mode(axis=1)
+            df["Majority_Label"] = (
+                modes.iloc[:, 0].fillna("Unknown") if not modes.empty else "Unknown"
             )
+            df["Label_Agreement"] = (
+                df[label_cols].eq(df["Majority_Label"], axis=0).sum(axis=1) / len(label_cols)
+            ).astype(float)
         else:
+            df["Majority_Label"] = "Unknown"
             df["Label_Agreement"] = 1.0
+
+    if (
+        "Label_Agreement" not in df.columns
+        or df["Label_Agreement"].isna().all()
+        or "Majority_Label" not in df.columns
+        or df["Majority_Label"].isna().all()
+    ):
+        _recompute_label_consensus()
     else:
-        df["Label_Agreement"] = pd.to_numeric(df["Label_Agreement"], errors="coerce").fillna(1.0)
-        # Normalise if stored as count (e.g. 3 out of 5 models)
+        df["Majority_Label"] = df["Majority_Label"].fillna("Unknown")
+        df["Label_Agreement"] = pd.to_numeric(df["Label_Agreement"], errors="coerce")
         max_val = df["Label_Agreement"].max()
         if max_val > 1.0:
             df["Label_Agreement"] = df["Label_Agreement"] / max_val
-
-    # ── Ensure Majority_Label ───────────────────────────────────────
-    if "Majority_Label" not in df.columns or df["Majority_Label"].isna().all():
-        label_cols = [c for c in df.columns if c.endswith("_Label")]
-        if label_cols:
-            df["Majority_Label"] = df[label_cols].mode(axis=1).iloc[:, 0]
-        else:
-            df["Majority_Label"] = "Unknown"
-    else:
-        df["Majority_Label"] = df["Majority_Label"].fillna("Unknown")
+        df["Label_Agreement"] = df["Label_Agreement"].fillna(1.0)
 
     return df
 
@@ -79,10 +84,9 @@ def load_cluster_profiles(model_col: str) -> pd.DataFrame:
     The first column is assumed to be the cluster ID column.
     """
     fname = f"cluster_profiles_{model_col}.csv"
-    path  = os.path.join(REPORTS_DIR, fname)
-    df    = pd.read_csv(path)
+    path = os.path.join(REPORTS_DIR, fname)
+    df = pd.read_csv(path)
 
-    # Set the first column as index (it's always the cluster-ID column)
     first_col = df.columns[0]
     df = df.set_index(first_col)
     df.index = df.index.astype(int)

@@ -47,7 +47,7 @@ def _render_model_row(m: dict, is_selected: bool) -> None:
     )
 
 
-def render_model_arena(metrics: list) -> None:
+def render_model_arena(metrics: list, state: dict) -> None:
     render_section_header(
         "★ MODEL ARENA",
         "5-Model Benchmark Comparison — Silhouette · Davies-Bouldin · Calinski-Harabasz",
@@ -56,6 +56,7 @@ def render_model_arena(metrics: list) -> None:
     # Determine the overall winner (best silhouette among valid models)
     valid = [m for m in metrics if not m.get("invalid", False)]
     winner_name = max(valid, key=lambda m: m["silhouette_score"])["model"] if valid else ""
+    active_model_key = state.get("active_model", "").replace("_Cluster", "").lower()
 
     with st.expander("▸ Expand Model Benchmarks", expanded=False):
 
@@ -76,7 +77,9 @@ def render_model_arena(metrics: list) -> None:
 
         # ── Sort: best silhouette first
         for m in sorted(metrics, key=lambda x: -x["silhouette_score"]):
-            is_selected = m["model"] == winner_name
+            model_name = m["model"].lower()
+            is_active = bool(active_model_key) and model_name.startswith(active_model_key)
+            is_selected = m["model"] == winner_name or is_active
             _render_model_row(m, is_selected)
 
         render_gold_divider()

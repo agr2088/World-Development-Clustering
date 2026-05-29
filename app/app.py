@@ -33,11 +33,11 @@ from layers.layer_6_model_arena   import render_model_arena
 from layers.layer_7_feature_vault import render_feature_vault
 
 # ── Render stack
-render_hero()
+render_hero(df)
 state = render_command(df)          # ← returns global state dict
 render_intelligence(df, metrics, state)
-render_world_map(df, state)
+render_world_map(df, state, metrics)
 render_cluster_atlas(df, pca_df, state)
 render_country_lens(df, state)      # ← conditional on state["country_query"]
-render_model_arena(metrics)
+render_model_arena(metrics, state)
 render_feature_vault(df, state)

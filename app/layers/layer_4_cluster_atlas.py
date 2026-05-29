@@ -1,22 +1,18 @@
 """
 layers/layer_4_cluster_atlas.py
-LAYER 4 — CLUSTER ATLAS
+LAYER 4 - CLUSTER ATLAS
 Left: PCA scatter | Right: Cluster radar
-Bottom: 4 cluster profile cards
+Bottom: cluster profile cards
 """
+import math
+from html import escape
+
 import streamlit as st
 import pandas as pd
 
 from utils.theme import render_section_header, render_gold_divider
 from utils.charts import build_pca_scatter, build_cluster_radar
 from utils.loader import load_cluster_profiles
-
-CLUSTER_NAMES = {
-    0: "High-Income Developed",
-    1: "Upper-Middle Income",
-    2: "Lower-Middle Income",
-    3: "Low-Income / Fragile States",
-}
 
 CLUSTER_COLORS = {
     0: "#D4A017",
@@ -26,25 +22,35 @@ CLUSTER_COLORS = {
 }
 
 
-def _render_cluster_card(cluster_id: int, stats: pd.Series) -> None:
+def _render_cluster_card(
+    cluster_id: int,
+    stats: pd.Series,
+    cluster_names: dict[int, str],
+    df: pd.DataFrame,
+    active_model: str,
+) -> None:
     """Renders a single cluster profile card."""
     color = CLUSTER_COLORS.get(cluster_id, "#D4A017")
-    name = CLUSTER_NAMES.get(cluster_id, f"Cluster {cluster_id}")
+    name = escape(cluster_names.get(cluster_id, f"Cluster {cluster_id}"))
 
-    # Safely extract stats — handle both scaled and raw profile CSVs
     def _get(key: str, fmt: str = ".2f") -> str:
         if key in stats.index:
             try:
                 val = float(stats[key])
+                if math.isnan(val):
+                    return "-"
                 return format(val, fmt)
             except (ValueError, TypeError):
-                return "—"
-        return "—"
+                return "-"
+        return "-"
 
-    count_val = _get("count", ".0f") if "count" in stats.index else "—"
-    gdp_val = _get("GDP", ",.4f") if "GDP" in stats.index else "—"
-    internet_val = _get("Internet Usage", ".4f") if "Internet Usage" in stats.index else "—"
-    infant_val = _get("Infant Mortality Rate", ".4f") if "Infant Mortality Rate" in stats.index else "—"
+    count_val = _get("count", ".0f") if "count" in stats.index else "-"
+    if count_val == "-":
+        count_val = str(df[df[active_model] == cluster_id].shape[0])
+
+    gdp_val = _get("GDP", ",.4f") if "GDP" in stats.index else "-"
+    internet_val = _get("Internet Usage", ".4f") if "Internet Usage" in stats.index else "-"
+    infant_val = _get("Infant Mortality Rate", ".4f") if "Infant Mortality Rate" in stats.index else "-"
 
     st.markdown(
         f"""
@@ -81,15 +87,16 @@ def render_cluster_atlas(
     state: dict,
 ) -> None:
     render_section_header(
-        "◈ CLUSTER ATLAS",
+        "CLUSTER ATLAS",
         "PCA Topology + Cluster Profiles",
     )
 
     active_model = state["active_model"]
     active_label_col = state["active_label_col"]
     selected_features = state["selected_features"]
+    cluster_names = state.get("cluster_names", {})
+    cluster_ids = sorted(int(cid) for cid in df[active_model].dropna().unique())
 
-    # ── Merge PCA coords with cluster labels
     merge_cols = ["Country", active_model, active_label_col, "Majority_Label"]
     merge_cols = [c for c in merge_cols if c in df.columns]
     df_pca_merged = pca_df.merge(df[merge_cols], on="Country", how="left")
@@ -107,8 +114,8 @@ def render_cluster_atlas(
     with right:
         cluster_id = st.selectbox(
             "Profile Cluster",
-            [0, 1, 2, 3],
-            format_func=lambda x: f"Cluster {x} — {CLUSTER_NAMES[x]}",
+            cluster_ids,
+            format_func=lambda x: f"Cluster {x} - {cluster_names.get(x, f'Cluster {x}')}",
             label_visibility="collapsed",
             key="atlas_cluster_select",
         )
@@ -122,27 +129,28 @@ def render_cluster_atlas(
         else:
             st.info("Select features in the Command Deck to display the radar chart.")
 
-    # ── 4 Cluster profile cards
     render_gold_divider()
 
     try:
         profiles = load_cluster_profiles(active_model)
-        # profiles index should be integer cluster ids 0-3
-        # Add count column from df
+        profiles.index = profiles.index.astype(int)
         count_series = df.groupby(active_model).size().rename("count")
+        count_series.index = count_series.index.astype(int)
         if "count" not in profiles.columns:
             profiles = profiles.join(count_series, how="left")
 
-        cols = st.columns(4)
-        for col, cid in zip(cols, range(4)):
+        cols = st.columns(len(cluster_ids))
+        for col, cid in zip(cols, cluster_ids):
             with col:
                 if cid in profiles.index:
-                    _render_cluster_card(cid, profiles.loc[cid])
+                    _render_cluster_card(cid, profiles.loc[cid], cluster_names, df, active_model)
                 else:
+                    color = CLUSTER_COLORS.get(cid, "#D4A017")
+                    name = escape(cluster_names.get(cid, f"Cluster {cid}"))
                     st.markdown(
-                        f'<div class="cluster-card" style="border-top:2px solid {CLUSTER_COLORS[cid]}">'
-                        f'<div class="cc-id" style="color:{CLUSTER_COLORS[cid]}">CLUSTER {cid}</div>'
-                        f'<div class="cc-name">{CLUSTER_NAMES[cid]}</div>'
+                        f'<div class="cluster-card" style="border-top:2px solid {color}">'
+                        f'<div class="cc-id" style="color:{color}">CLUSTER {cid}</div>'
+                        f'<div class="cc-name">{name}</div>'
                         f'<p style="color:#5A5040;font-size:11px">No profile data</p>'
                         f"</div>",
                         unsafe_allow_html=True,

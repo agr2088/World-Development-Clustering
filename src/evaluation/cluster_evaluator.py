@@ -16,7 +16,7 @@ Final selection logic:
 Cluster interpretation:
   - Compute mean values per cluster on CLEANED (original-scale) data
   - Use multiple features: GDP, Life Expectancy, Internet Usage, Infant Mortality
-  - Assign human-readable labels: Developed / Developing / Underdeveloped
+  - Assign human-readable labels: Developed / Emerging / Developing / Underdeveloped
 """
 import os
 import sys
@@ -265,7 +265,7 @@ def assign_cluster_labels(
     country_col: str = "Country",
 ) -> pd.DataFrame:
     """
-    Assign human-readable labels to clusters: Developed / Developing / Underdeveloped.
+    Assign human-readable labels to clusters by ranked composite score.
     Method:
       1. Join cluster assignments with original-scale cleaned data
       2. Compute composite score per cluster using MULTIPLE features:
@@ -275,9 +275,7 @@ def assign_cluster_labels(
            - Infant Mortality Rate (inverted: lower = better development)
       3. Rank clusters by composite score
       4. Assign labels based on rank:
-         - Top cluster(s):    Developed
-         - Middle cluster(s): Developing
-         - Bottom cluster(s): Underdeveloped
+         Developed > Emerging > Developing > Underdeveloped
     Using multiple features prevents single-feature bias (e.g. GDP-only labeling).
     Returns df with added column: '{cluster_col}_Label'
     """
@@ -341,33 +339,17 @@ def assign_cluster_labels(
         else:
             df_norm["_composite"] += weight * df_norm[feat]
 
-    cluster_scores = df_norm.groupby(cluster_col)["_composite"].mean().sort_values()
+    cluster_scores = df_norm.groupby(cluster_col)["_composite"].mean().sort_values(ascending=False)
     n_clusters     = len(cluster_scores)
 
     # Log per-cluster mean values for traceability (cleaned up)
     logger.info(f"Cluster feature means computed ({', '.join(available)})")
 
-    label_map = {}
-    if n_clusters <= 1:
-        for c in cluster_scores.index:
-            label_map[c] = "Developing"
-    elif n_clusters == 2:
-        label_map[cluster_scores.index[0]] = "Underdeveloped"
-        label_map[cluster_scores.index[1]] = "Developed"
-    elif n_clusters == 3:
-        label_map[cluster_scores.index[0]] = "Underdeveloped"
-        label_map[cluster_scores.index[1]] = "Developing"
-        label_map[cluster_scores.index[2]] = "Developed"
-    else:
-        sorted_clusters = cluster_scores.index.tolist()
-        third           = max(1, n_clusters // 3)
-        for i, c in enumerate(sorted_clusters):
-            if i < third:
-                label_map[c] = "Underdeveloped"
-            elif i >= n_clusters - third:
-                label_map[c] = "Developed"
-            else:
-                label_map[c] = "Developing"
+    ranked_labels = ["Developed", "Emerging", "Developing", "Underdeveloped"]
+    label_map = {
+        cluster_id: ranked_labels[min(rank, len(ranked_labels) - 1)]
+        for rank, cluster_id in enumerate(cluster_scores.index.tolist())
+    }
 
     df           = df.copy()
     df[label_col] = df[cluster_col].map(label_map)
@@ -386,6 +368,31 @@ def assign_cluster_labels(
             f"| composite_score={score:.3f} | n={count}"
         )
 
+    return df
+
+
+def compute_label_consensus(df: pd.DataFrame) -> pd.DataFrame:
+    """Populate majority label and agreement fraction from model label columns."""
+    df = df.copy()
+    label_cols = [c for c in df.columns if c.endswith("_Label") and c != "Majority_Label"]
+
+    if not label_cols:
+        df["Majority_Label"] = "Unknown"
+        df["Label_Agreement"] = 1.0
+        logger.info("No model label columns found; defaulted Label_Agreement mean to 1.0000")
+        return df
+
+    modes = df[label_cols].mode(axis=1)
+    if modes.empty:
+        df["Majority_Label"] = "Unknown"
+    else:
+        df["Majority_Label"] = modes.iloc[:, 0].fillna("Unknown")
+
+    df["Label_Agreement"] = (
+        df[label_cols].eq(df["Majority_Label"], axis=0).sum(axis=1) / len(label_cols)
+    ).astype(float)
+
+    logger.info(f"Mean Label_Agreement after consensus computation: {df['Label_Agreement'].mean():.4f}")
     return df
 
 

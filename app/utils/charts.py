@@ -141,12 +141,27 @@ def build_choropleth_single(df: pd.DataFrame, cluster_col: str, colors: dict) ->
         hover += f"Internet Usage: %{{customdata[{idx_map['Internet Usage']}]:.1f}}%"
     hover += "<extra></extra>"
 
-    colorscale = [[i / max(len(colors) - 1, 1), c] for i, c in enumerate(colors.values())]
+    z_values = df[cluster_col].astype(float)
+    present_keys = {int(v) for v in z_values.dropna().unique()}
+    color_items = [
+        (cluster_id, color)
+        for cluster_id, color in sorted(colors.items())
+        if cluster_id != -1 or -1 in present_keys
+    ]
+    zmin = min(cluster_id for cluster_id, _ in color_items)
+    zmax = max(cluster_id for cluster_id, _ in color_items)
+    denom = max(zmax - zmin, 1)
+    colorscale = [
+        [(cluster_id - zmin) / denom, color]
+        for cluster_id, color in color_items
+    ]
 
     fig = go.Figure(go.Choropleth(
         locations=df["Country"],
         locationmode="country names",
-        z=df[cluster_col].astype(float),
+        z=z_values,
+        zmin=zmin,
+        zmax=zmax,
         colorscale=colorscale,
         showscale=False,
         hovertemplate=hover,
@@ -171,11 +186,18 @@ def build_choropleth_single(df: pd.DataFrame, cluster_col: str, colors: dict) ->
 
 
 def build_choropleth_mini(df: pd.DataFrame, cluster_col: str, title: str, colors: dict) -> go.Figure:
-    colorscale = [[i / max(len(colors) - 1, 1), c] for i, c in enumerate(colors.values())]
+    z_values = df[cluster_col].astype(float)
+    color_items = [(cluster_id, color) for cluster_id, color in sorted(colors.items()) if cluster_id != -1]
+    zmin = min(cluster_id for cluster_id, _ in color_items)
+    zmax = max(cluster_id for cluster_id, _ in color_items)
+    denom = max(zmax - zmin, 1)
+    colorscale = [[(cluster_id - zmin) / denom, color] for cluster_id, color in color_items]
     fig = go.Figure(go.Choropleth(
         locations=df["Country"],
         locationmode="country names",
-        z=df[cluster_col].astype(float),
+        z=z_values,
+        zmin=zmin,
+        zmax=zmax,
         colorscale=colorscale,
         showscale=False,
         hovertemplate="<b>%{location}</b><extra></extra>",
@@ -368,19 +390,46 @@ def build_country_feature_bars(country_row: pd.Series, df: pd.DataFrame,
 
 def build_cluster_size_bar(m: dict) -> go.Figure:
     sizes = m.get("cluster_sizes", {})
-    # BUG FIXED: keys may be strings from JSON; cast to int safely
-    labels = [f"C{k}" for k in sizes]
+    keys   = list(sizes.keys())
     values = list(sizes.values())
-    colors = [CLUSTER_COLORS.get(int(k), "#5A5040") for k in sizes]
+    labels = [f"C{k}" for k in keys]
+    colors = [CLUSTER_COLORS.get(int(k), "#5A5040") for k in keys]
+    x_pos  = list(range(len(labels)))
+    max_val = max(values) if values else 1
 
     fig = go.Figure(go.Bar(
-        x=labels, y=values,
-        marker=dict(color=colors),
-        text=values, textposition="outside",
-        textfont=dict(family="JetBrains Mono, monospace", size=9, color="#B8A87A"),
+        x=x_pos,
+        y=values,
+        marker=dict(color=colors, line=dict(width=0)),
+        text=values,
+        textposition="auto",
+        textfont=dict(family="JetBrains Mono, monospace", size=9, color="#F5ECD7"),
+        hovertemplate="<b>%{text}</b> countries<extra></extra>",
     ))
-    _apply_dark(fig, height=180, title_text=m["model"])
-    fig.update_layout(margin=dict(l=4, r=4, t=30, b=4))
+
+    _apply_dark(fig, height=230, title_text=m["model"])
+
+    fig.update_layout(
+        margin=dict(l=8, r=8, t=34, b=8),
+        xaxis=dict(
+            tickmode="array",
+            tickvals=x_pos,
+            ticktext=labels,
+            gridcolor="#18181F",
+            linecolor="#2A2415",
+            tickcolor="#5A5040",
+            zeroline=False,
+            fixedrange=True,
+        ),
+        yaxis=dict(
+            range=[0, max_val * 1.30],
+            gridcolor="#18181F",
+            linecolor="#2A2415",
+            tickcolor="#5A5040",
+            zeroline=False,
+            fixedrange=True,
+        ),
+    )
     return fig
 
 

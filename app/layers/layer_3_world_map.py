@@ -1,8 +1,10 @@
 """
 layers/layer_3_world_map.py
-LAYER 3 — WORLD MAP
+LAYER 3 - WORLD MAP
 Full-width choropleth, single-model or 5-model small-multiples toggle.
 """
+from html import escape
+
 import streamlit as st
 import pandas as pd
 
@@ -10,6 +12,7 @@ from utils.theme import render_section_header, render_gold_divider
 from utils.charts import build_choropleth_single, build_choropleth_mini
 
 CLUSTER_COLORS = {
+    -1: "#1A1A24",
     0: "#D4A017",
     1: "#7EC8A4",
     2: "#6EB3D4",
@@ -17,19 +20,29 @@ CLUSTER_COLORS = {
 }
 
 MODEL_COLS = [
-    ("KMeans_Cluster",       "KMeans ★"),
-    ("GMM_Cluster",          "GMM"),
-    ("Hierarchical_Cluster", "Agglomerative ⚠ invalid"),
-    ("Spectral_Cluster",     "Spectral"),
-    ("Birch_Cluster",        "BIRCH"),
+    ("KMeans_Cluster", "KMeans ★"),
+    ("GMM_Cluster", "GMM"),
+    ("Hierarchical_Cluster", "Agglomerative"),
+    ("Spectral_Cluster", "Spectral"),
+    ("Birch_Cluster", "BIRCH"),
 ]
 
 
-def render_world_map(df: pd.DataFrame, state: dict) -> None:
-    render_section_header(
-        "🌍 WORLD MAP",
-        "Choropleth — Countries Coloured by Cluster Assignment",
+def _is_invalid_model(display_name: str, invalid_names: set[str]) -> bool:
+    display_lower = display_name.lower()
+    return any(
+        display_lower.startswith(name.lower()) or name.lower().startswith(display_lower)
+        for name in invalid_names
     )
+
+
+def render_world_map(df: pd.DataFrame, state: dict, metrics: list) -> None:
+    render_section_header(
+        "WORLD MAP",
+        "Choropleth - Countries Coloured by Cluster Assignment",
+    )
+
+    invalid_names = {m["model"] for m in metrics if m.get("invalid", False)}
 
     left_ctrl, right_ctrl = st.columns([1, 3])
     with left_ctrl:
@@ -42,16 +55,13 @@ def render_world_map(df: pd.DataFrame, state: dict) -> None:
 
     if view_toggle == "Single Model":
         active_model = state["active_model"]
-        # Filter if cluster filter is active
         df_map = df.copy()
         if state["active_clusters"]:
-            # Grey out non-selected clusters by assigning NaN placeholder
-            # Better: just show full map but highlight via the colorscale
-            pass  # choropleth always shows all countries
+            keep_clusters = set(state["active_clusters"])
+            df_map.loc[~df_map[active_model].isin(keep_clusters), active_model] = -1
         fig = build_choropleth_single(df_map, active_model, CLUSTER_COLORS)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     else:
-        # 5-model small-multiples (2 rows × 3 cols, last slot empty)
         row1 = st.columns(3)
         row2 = st.columns(3)
         all_cols = row1 + row2
@@ -60,23 +70,24 @@ def render_world_map(df: pd.DataFrame, state: dict) -> None:
             if col_name not in df.columns:
                 continue
             with all_cols[i]:
-                fig = build_choropleth_mini(df, col_name, title, CLUSTER_COLORS)
+                display_title = f"{title} ⚠" if _is_invalid_model(title, invalid_names) else title
+                fig = build_choropleth_mini(df, col_name, display_title, CLUSTER_COLORS)
                 st.plotly_chart(
                     fig,
                     use_container_width=True,
                     config={"displayModeBar": False},
                 )
 
-    # Cluster colour legend
+    cluster_names = state.get("cluster_names", {})
+    legend_items = []
+    for cid in sorted(cluster_names):
+        color = CLUSTER_COLORS.get(cid, "#5A5040")
+        name = escape(cluster_names.get(cid, f"Cluster {cid}"))
+        legend_items.append(
+            f'<span class="legend-item" style="color:{color}">■ Cluster {cid} - {name}</span>'
+        )
     st.markdown(
-        """
-        <div class="map-legend">
-          <span class="legend-item" style="color:#D4A017">■ Cluster 0 — High-Income Developed</span>
-          <span class="legend-item" style="color:#7EC8A4">■ Cluster 1 — Upper-Middle Income</span>
-          <span class="legend-item" style="color:#6EB3D4">■ Cluster 2 — Lower-Middle Income</span>
-          <span class="legend-item" style="color:#C97B5E">■ Cluster 3 — Low-Income / Fragile</span>
-        </div>
-        """,
+        f'<div class="map-legend">{"".join(legend_items)}</div>',
         unsafe_allow_html=True,
     )
 

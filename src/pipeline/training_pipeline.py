@@ -48,6 +48,7 @@ from src.evaluation.cluster_evaluator import (
     compute_cluster_feature_importance,
     validate_clusters_gdp_proxy,
     assign_cluster_labels,
+    compute_label_consensus,
     cluster_profile,
 )
 from src.utils.logger import get_logger
@@ -275,6 +276,8 @@ def run_training_pipeline(optimal_k: int = None) -> dict:
     ]:
         if cluster_col in df_out.columns:
             cluster_profile(df_out, cluster_col, feature_cols)
+
+    df_out = compute_label_consensus(df_out)
 
     # Save final output
     save_dataframe(df_out, CLUSTERED_DATA)
